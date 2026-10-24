@@ -18,7 +18,9 @@ See `.env.example` for the full list. Required in production:
 - `DATABASE_URL`, `APP_BASE_URL`, `AUTH_SECRET` (32+ chars)
 - `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 - Optional: `AI_PROVIDER`, `AI_GATEWAY_API_KEY`, `AI_DEFAULT_MODEL`, `AI_BASE_URL`, `AI_PRICE_*`
-- Phase 6: `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, `META_WEBHOOK_VERIFY_TOKEN`
+- Instagram: `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, `META_WEBHOOK_VERIFY_TOKEN`, optional `META_WEBHOOK_FIELDS`
+- `SECRETS_ENCRYPTION_KEY` (same value on web **and** worker; losing it means reconnecting every account)
+- Storage for publishing: `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY` (see meta-setup.md)
 
 Set them in Vercel (Production and Preview separately) and in the worker host. Never put secrets in `NEXT_PUBLIC_*`.
 
@@ -51,5 +53,8 @@ Set them in Vercel (Production and Preview separately) and in the worker host. N
 ## Domain and redirect URLs
 
 - `APP_BASE_URL=https://<your-domain>`
-- `META_REDIRECT_URI=https://<your-domain>/api/v1/integrations/meta/callback` (phase 6)
-- Webhook URL for Meta: `https://<your-domain>/api/v1/webhooks/meta` (phase 6)
+- `META_REDIRECT_URI=https://<your-domain>/api/v1/integrations/meta/callback`
+- Webhook URL for Meta: `https://<your-domain>/api/v1/webhooks/meta`
+- Deauthorize callback: `https://<your-domain>/api/v1/webhooks/meta/deauthorize`
+- Data deletion URL: `https://<your-domain>/api/v1/webhooks/meta/data-deletion`
+- The webhook routes must stay public (no auth wall, no Vercel deployment protection on production).

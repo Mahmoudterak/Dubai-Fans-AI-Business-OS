@@ -29,6 +29,7 @@ packages/db         Drizzle schema, migrations, client
 packages/ai         AI gateway (validation, retries, budgets, usage)
 packages/orchestrator  tasks, approvals, content, agents, runner, audit
 packages/auth       session + organization resolution
+packages/integrations  Meta client, webhook verification, encrypted secret store, S3 storage, image checks
 packages/observability  JSON logger with secret redaction
 tests/              unit · integration · api · security
 docs/               architecture and operations
@@ -74,7 +75,11 @@ Open http://localhost:3000, sign in as one of the seeded development users (owne
 
 1. **Agents Center → Operations Agent → "تشغيل فحص الصحة"**: a task is created (202), the worker runs it, and the task page shows the result, the agent run and every event.
 2. **Content Studio → new content → "إرسال للموافقة"** → **Approval Center → اعتماد**.
-3. **"نشر الآن"** is refused with *integration not connected* until Instagram is connected (phase 6). The approval stays unused.
+3. **"نشر الآن"** is refused with *integration not connected* until an Instagram account is connected. The approval stays unused.
+
+### Instagram (phase 6)
+
+Connecting and publishing need a Meta app, a professional Instagram account, an S3-compatible bucket and `SECRETS_ENCRYPTION_KEY`. Step-by-step setup, the publishing guarantees and how to test the connection without posting: [docs/operations/meta-setup.md](docs/operations/meta-setup.md).
 
 ### AI features
 

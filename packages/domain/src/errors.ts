@@ -14,6 +14,11 @@ export type ErrorCode =
   | "ai_output_invalid"
   | "budget_exceeded"
   | "integration_not_connected"
+  | "integration_reauth_required"
+  | "integration_missing_permission"
+  | "integration_error"
+  | "storage_not_configured"
+  | "signature_invalid"
   | "agent_disabled"
   | "internal_error";
 
@@ -33,6 +38,11 @@ const statusByCode: Record<ErrorCode, number> = {
   ai_output_invalid: 502,
   budget_exceeded: 402,
   integration_not_connected: 409,
+  integration_reauth_required: 409,
+  integration_missing_permission: 409,
+  integration_error: 502,
+  storage_not_configured: 503,
+  signature_invalid: 401,
   agent_disabled: 409,
   internal_error: 500,
 };

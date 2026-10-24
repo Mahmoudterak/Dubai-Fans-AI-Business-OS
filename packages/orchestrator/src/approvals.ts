@@ -3,6 +3,8 @@ import {
   approvalEvents,
   approvalRequests,
   contentItems,
+  contentVersions,
+  organizations,
   tasks,
   users,
   type Database,
@@ -183,6 +185,8 @@ export async function decideApproval(
       };
     }
 
+    if (decision === "approve") await assertFourEyes(tx, approval, user.userId);
+
     const to: ApprovalStatus =
       decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "changes_requested";
     const updated = await setStatus(
@@ -205,6 +209,37 @@ export async function decideApproval(
   });
   if ("error" in outcome) throw outcome.error;
   return outcome.approval;
+}
+
+/**
+ * Four-eyes rule (organizations.require_distinct_approver, off by default): when enabled,
+ * nobody can approve a request they submitted, or content they created or last edited.
+ * Rejecting or requesting changes is always allowed.
+ */
+async function assertFourEyes(db: Database, approval: ApprovalRow, approverId: string) {
+  const [org] = await db
+    .select({ on: organizations.requireDistinctApprover })
+    .from(organizations)
+    .where(eq(organizations.id, approval.organizationId));
+  if (!org?.on) return;
+  const authors = new Set<string>();
+  if (approval.requestedByType === "user" && approval.requestedById) authors.add(approval.requestedById);
+  if (approval.contentItemId) {
+    const [item] = await db.select().from(contentItems).where(eq(contentItems.id, approval.contentItemId));
+    if (item?.createdByUserId) authors.add(item.createdByUserId);
+    const versionId = (approval.payload as { versionId?: string }).versionId;
+    if (versionId) {
+      const [v] = await db.select({ by: contentVersions.createdByUserId }).from(contentVersions).where(eq(contentVersions.id, versionId));
+      if (v?.by) authors.add(v.by);
+    }
+  }
+  if (approval.taskId) {
+    const [task] = await db.select({ by: tasks.createdByUserId }).from(tasks).where(eq(tasks.id, approval.taskId));
+    if (task?.by) authors.add(task.by);
+  }
+  if (authors.has(approverId)) {
+    throw new AppError("forbidden", "Four-eyes policy: someone other than the author must approve this");
+  }
 }
 
 async function applyDecisionSideEffects(tx: Database, ctx: Ctx, approval: ApprovalRow, to: ApprovalStatus) {

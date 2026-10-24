@@ -82,7 +82,12 @@ export const contentVersionBody = z.object({
   body: z.string().trim().min(1).max(5000),
   hashtags,
   cta: z.string().trim().max(300).optional(),
+  /** Omit to keep the current image; null removes it. */
+  mediaAssetId: z.uuid().nullable().optional(),
 });
+
+export const attachMediaBody = z.object({ mediaAssetId: z.uuid().nullable() });
+export const updateConnectionBody = z.object({ enabled: z.boolean() });
 
 export const createContentBody = contentVersionBody.extend({
   title: z.string().trim().min(1).max(200),
@@ -112,6 +117,7 @@ export const updateAgentBody = z.object({
 
 export const updateOrgSettingsBody = z.object({
   agentsPaused: z.boolean().optional(),
+  requireDistinctApprover: z.boolean().optional(),
   aiMonthlyBudgetUsd: z.number().positive().max(100000).nullable().optional(),
   timezone: z.string().max(64).optional(),
 });

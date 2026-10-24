@@ -1,7 +1,9 @@
 import { z } from "zod";
 import {
   approvalDecisionBody,
+  attachMediaBody,
   contentVersionBody,
+  updateConnectionBody,
   createContentBody,
   createTaskBody,
   generateContentBody,
@@ -55,8 +57,36 @@ const ops: Record<string, Partial<Record<"get" | "post" | "patch", Op>>> = {
   "/content/{id}/versions/{versionId}/select": { post: { summary: "Make a version current (voids open approvals)", permission: "content.write", idempotent: true } },
   "/content/{id}/submit": { post: { summary: "Submit current version for approval", permission: "content.write", ok: 201, idempotent: true, errors: [409] } },
   "/content/{id}/schedule": { post: { summary: "Set publish time (voids open approvals)", permission: "content.write", body: scheduleContentBody, idempotent: true } },
-  "/content/{id}/publish": { post: { summary: "Publish approved content once", permission: "content.publish", idempotent: true, errors: [409] } },
-  "/integrations": { get: { summary: "Integration status (real; nothing connected until phase 6)", permission: "integrations.read" } },
+  "/content/{id}/publish": {
+    post: {
+      summary: "Start publishing approved content (checks run first; approval consumed once; worker confirms with Instagram)",
+      permission: "content.publish",
+      idempotent: true,
+      errors: [409],
+    },
+  },
+  "/integrations": { get: { summary: "Configuration readiness and real connections (no secrets)", permission: "integrations.read" } },
+  "/integrations/meta/connect": { post: { summary: "Form POST: starts Instagram OAuth (303 to instagram.com, sets state cookie)", permission: "integrations.manage" } },
+  "/integrations/meta/callback": { get: { summary: "OAuth callback: validates state + cookie, exchanges code server-side, 303 to /integrations" } },
+  "/integrations/{id}": {
+    get: { summary: "Connection details", permission: "integrations.read" },
+    patch: { summary: "Pause/resume a connection (kill switch)", permission: "integrations.manage", body: updateConnectionBody, idempotent: true },
+  },
+  "/integrations/{id}/status": { get: { summary: "Connection status, scopes, token expiry, last error", permission: "integrations.read" } },
+  "/integrations/{id}/sync": { post: { summary: "Re-read profile and 24h publishing quota", permission: "integrations.manage", idempotent: true, errors: [409] } },
+  "/integrations/{id}/disconnect": { post: { summary: "Delete stored token and disconnect", permission: "integrations.manage", idempotent: true } },
+  "/webhooks/meta": {
+    get: { summary: "Meta verification handshake (hub.challenge); public" },
+    post: { summary: "Meta events; X-Hub-Signature-256 required; 200 only after storing; public", errors: [401] },
+  },
+  "/webhooks/meta/deauthorize": { post: { summary: "Meta deauthorize callback (signed_request); public" } },
+  "/webhooks/meta/data-deletion": { post: { summary: "Meta data deletion callback (signed_request) → { url, confirmation_code }; public" } },
+  "/media": {
+    get: { summary: "List uploaded images", permission: "content.read" },
+    post: { summary: "Upload a JPEG (multipart field 'file'); stored privately", permission: "content.write", ok: 201 },
+  },
+  "/media/{id}": { get: { summary: "Image metadata and a 5-minute private preview link", permission: "content.read" } },
+  "/content/{id}/media": { post: { summary: "Attach/remove the image (new version; voids open approvals)", permission: "content.write", body: attachMediaBody, ok: 201, idempotent: true } },
   "/audit": { get: { summary: "Append-only audit log", permission: "audit.read" } },
   "/settings": {
     get: { summary: "Organization settings", permission: "org.read" },

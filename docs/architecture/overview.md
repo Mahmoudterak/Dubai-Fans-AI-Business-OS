@@ -69,6 +69,25 @@ Policies (`agent_policies`) default to the safest setting: approval required for
 - Budgets: per task (`budget_usd`), per agent run (`max_cost_per_run_usd`), per org per month. Enforced only when prices are known.
 - Agent tool use requires an `agent_tool_permissions` row (`requireTool`).
 
+## Integrations (phase 6)
+
+`packages/integrations` holds provider code with no business rules: the Meta Instagram client
+(injectable `fetch`), webhook signature/handshake/normalisation, the encrypted `SecretStore`,
+the `StorageProvider` (S3-compatible; in-memory for tests) and image inspection.
+`packages/orchestrator` owns the rules:
+
+- `integrations.ts`: OAuth (hashed single-use state bound to user + org + browser cookie), connections, kill switch, sync, token refresh, deauthorize/revoke.
+- `webhooks.ts`: verify → store (dedupe) → 200; worker processes per event type with retries.
+- `publications.ts`: pre-checks, then a resumable state machine per publication (`queued → container_processing → ready_to_publish → publish_requested → published | failed | needs_review`), designed so `media_publish` is never repeated without proof that the previous call did not post.
+- `media.ts`: uploads stored privately; row written only after storage confirms.
+
+One live connection per Instagram account across all orgs (partial unique index), because webhooks are routed by account id. Details and Meta specifics: `docs/operations/meta-setup.md`.
+
+- **ADR-008 Instagram API with Instagram Login** over the Facebook Login variant: no Facebook Page required, fewer permissions.
+- **ADR-009 App-level AES-256-GCM for tokens** with the key outside the DB, behind a `SecretStore` interface so a managed KMS can replace it.
+- **ADR-010 Publishing is asynchronous and confirmed.** The API only starts it; the worker confirms with `GET /<media-id>` before anything shows as published.
+- **ADR-011 Four-eyes is a per-org setting, off by default** (single-owner businesses would otherwise be blocked). When on, authors and last editors cannot approve.
+
 ## API conventions
 
 `apps/web/src/server/api.ts` wraps every route: session → org context → permission → same-origin check (CSRF) → rate limit → Zod body/query → idempotency → handler → `{ data, requestId }` or `{ error: { code, message, details }, requestId }`. `x-request-id` is propagated from the proxy.
@@ -80,5 +99,5 @@ Policies (`agent_policies`) default to the safest setting: approval required for
 - **ADR-003 Clerk for production auth**, with a signed dev login that is impossible to enable in production or when Clerk is configured.
 - **ADR-004 RLS deferred.** App-layer scoping is enforced and tested. Enabling `FORCE ROW LEVEL SECURITY` needs a non-owner DB role and `SET LOCAL app.org_id` per transaction, including in the worker; planned for phase 8.
 - **ADR-005 Roles as an enum**, not a `roles` table: five fixed roles with a code-defined permission matrix are simpler and auditable. A table can be added if custom roles are needed.
-- **ADR-006 Tables created per phase.** CRM, integration and media tables arrive with phases 6–7, as the spec asks not to create unused tables.
+- **ADR-006 Tables created per phase.** Integration, media, webhook and publication tables arrived with phase 6; CRM tables come with phase 7.
 - **ADR-007 System fonts.** Avoids a build-time dependency on Google Fonts; a brand font can be self-hosted later.

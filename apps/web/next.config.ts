@@ -51,10 +51,11 @@ const config: NextConfig = {
     "@dfos/contracts",
     "@dfos/db",
     "@dfos/domain",
+    "@dfos/integrations",
     "@dfos/observability",
     "@dfos/orchestrator",
   ],
-  serverExternalPackages: ["postgres"],
+  serverExternalPackages: ["postgres", "@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

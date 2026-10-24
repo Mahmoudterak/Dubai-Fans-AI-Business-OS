@@ -1,13 +1,14 @@
 import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
-import { agentPolicies, approvalRequests, contentItems, contentVersions, type Database } from "@dfos/db";
-import { AppError, canonicalJson, sha256, type ContentPlatform, type ContentStatus } from "@dfos/domain";
+import { agentPolicies, approvalRequests, contentItems, contentPublications, contentVersions, mediaAssets, type Database } from "@dfos/db";
+import { AppError, canonicalJson, isAppError, sha256, type ContentPlatform, type ContentStatus } from "@dfos/domain";
 import type { z } from "zod";
 import type { contentVersionBody, createContentBody } from "@dfos/contracts";
 import { consumeApproval, createApprovalRequest, invalidateOpenApprovals } from "./approvals";
-import { audit } from "./audit";
+import { audit, writeAudit } from "./audit";
 import { requirePermission, type Actor, type Ctx } from "./context";
 import { CONTENT_PUBLISH_ACTION, loadContentPublishPayload } from "./content-payload";
-import { getPublisher } from "./publishers";
+import { findPublishingConnection, publicConnection } from "./integrations";
+import { createPublication, hasActivePublication, precheckInstagram, type PublishDeps } from "./publications";
 
 type VersionInput = z.infer<typeof contentVersionBody>;
 type CreateInput = z.infer<typeof createContentBody>;
@@ -22,8 +23,8 @@ const PLATFORM_NAMES: Record<ContentPlatform, string> = {
 
 const normalizeTags =(tags: string[]) => tags.map((t) => (t.startsWith("#") ? t : `#${t}`));
 
-export function contentHash(v: { body: string; hashtags: string[]; cta?: string | null }) {
-  return sha256(canonicalJson({ body: v.body, hashtags: v.hashtags, cta: v.cta ?? null }));
+export function contentHash(v: { body: string; hashtags: string[]; cta?: string | null; mediaSha256?: string | null }) {
+  return sha256(canonicalJson({ body: v.body, hashtags: v.hashtags, cta: v.cta ?? null, media: v.mediaSha256 ?? null }));
 }
 
 /** Statuses where the content is under review or cleared to go out. Editing them voids approvals. */
@@ -66,6 +67,15 @@ async function insertVersion(
     .from(contentVersions)
     .where(eq(contentVersions.contentItemId, contentItemId));
   const hashtags = normalizeTags(v.hashtags ?? []);
+  let mediaSha256: string | null = null;
+  if (v.mediaAssetId) {
+    const [media] = await db
+      .select({ sha256: mediaAssets.sha256 })
+      .from(mediaAssets)
+      .where(and(eq(mediaAssets.id, v.mediaAssetId), eq(mediaAssets.organizationId, ctx.organizationId)));
+    if (!media) throw new AppError("not_found", "Media not found");
+    mediaSha256 = media.sha256;
+  }
   const [row] = await db
     .insert(contentVersions)
     .values({
@@ -77,8 +87,9 @@ async function insertVersion(
       cta: v.cta,
       source,
       agentRunId,
+      mediaAssetId: v.mediaAssetId ?? null,
       createdByUserId: ctx.actor.type === "user" ? ctx.actor.userId : undefined,
-      contentHash: contentHash({ body: v.body, hashtags, cta: v.cta }),
+      contentHash: contentHash({ body: v.body, hashtags, cta: v.cta, mediaSha256 }),
     })
     .returning();
   if (!row) throw new AppError("internal_error", "Failed to save version");
@@ -112,10 +123,16 @@ export async function addContentVersion(
   requirePermission(ctx, "content.write");
   return ctx.db.transaction(async (tx) => {
     const item = await loadItem(tx, ctx.organizationId, contentItemId);
-    if (item.status === "publishing" || item.status === "published") {
+    if (item.status === "publishing" || item.status === "published" || (await hasActivePublication(tx, item.id))) {
       throw new AppError("conflict", "Published content cannot be edited; create a new item instead");
     }
-    const version = await insertVersion(tx, ctx, item.id, v, opts.source ?? "manual", opts.agentRunId);
+    // Text edits keep the current image unless a different one (or null) is given explicitly.
+    let mediaAssetId = v.mediaAssetId;
+    if (mediaAssetId === undefined && item.currentVersionId) {
+      const [cur] = await tx.select({ m: contentVersions.mediaAssetId }).from(contentVersions).where(eq(contentVersions.id, item.currentVersionId));
+      mediaAssetId = cur?.m ?? null;
+    }
+    const version = await insertVersion(tx, ctx, item.id, { ...v, mediaAssetId }, opts.source ?? "manual", opts.agentRunId);
     let voided = 0;
     if (opts.makeCurrent ?? true) {
       await tx.update(contentItems).set({ currentVersionId: version.id }).where(eq(contentItems.id, item.id));
@@ -171,15 +188,20 @@ export async function listContent(
 export async function getContent(ctx: Ctx, id: string) {
   requirePermission(ctx, "content.read");
   const item = await loadItem(ctx.db, ctx.organizationId, id);
-  const [versions, approvals] = await Promise.all([
+  const [versions, approvals, publications, connection] = await Promise.all([
     ctx.db.select().from(contentVersions).where(and(eq(contentVersions.contentItemId, id), eq(contentVersions.organizationId, ctx.organizationId))).orderBy(desc(contentVersions.versionNumber)),
     ctx.db.select().from(approvalRequests).where(and(eq(approvalRequests.contentItemId, id), eq(approvalRequests.organizationId, ctx.organizationId))).orderBy(desc(approvalRequests.createdAt)),
+    ctx.db.select().from(contentPublications).where(and(eq(contentPublications.contentItemId, id), eq(contentPublications.organizationId, ctx.organizationId))).orderBy(desc(contentPublications.createdAt)),
+    item.platform === "instagram" ? findPublishingConnection(ctx.db, ctx.organizationId) : Promise.resolve(undefined),
   ]);
-  const publisher = getPublisher(item.platform);
-  const publishing = publisher
-    ? { available: true, connected: await publisher.isConnected(ctx.db, ctx.organizationId) }
-    : { available: false, connected: false };
-  return { item, versions, approvals, publishing };
+  const conn = connection ? publicConnection(connection) : null;
+  const publishing = {
+    available: item.platform === "instagram",
+    connected: Boolean(conn && conn.status === "active" && conn.enabled),
+    canPublish: Boolean(conn?.canPublish),
+    account: conn ? { username: conn.username, status: conn.status, enabled: conn.enabled } : null,
+  };
+  return { item, versions, approvals, publications, publishing };
 }
 
 async function policyFor(db: Database, organizationId: string, actionType: string) {
@@ -239,17 +261,20 @@ export async function scheduleContent(ctx: Ctx, id: string, scheduledAt: Date) {
 }
 
 /**
- * Publishes approved content. Order matters:
- * 1. integration must be connected (otherwise fail without using the approval),
- * 2. the approval is consumed atomically (prevents double publishing),
- * 3. only then the external call happens.
+ * Starts publishing approved content. Order matters:
+ * 1. every precondition (connection, permission, image, storage) is checked first,
+ *    so a fixable problem never uses up the approval,
+ * 2. the approval is consumed atomically (fingerprint re-checked, single use),
+ * 3. a publication row is created (unique per approval) and the worker does the API calls.
+ * The content shows "published" only after Instagram confirms the post.
  */
-export async function publishContent(ctx: Ctx | (Omit<Ctx, "actor"> & { actor: Actor }), id: string) {
+export async function publishContent(ctx: Ctx, id: string, d: PublishDeps = {}) {
   requirePermission(ctx, "content.publish");
   const item = await loadItem(ctx.db, ctx.organizationId, id);
-  if (item.status !== "approved" && item.status !== "scheduled") {
+  if (!["approved", "scheduled", "failed"].includes(item.status)) {
     throw new AppError("approval_required", "Content must be approved before it can be published");
   }
+  if (await hasActivePublication(ctx.db, id)) throw new AppError("conflict", "This content is already being published");
   const [approval] = await ctx.db
     .select()
     .from(approvalRequests)
@@ -265,12 +290,9 @@ export async function publishContent(ctx: Ctx | (Omit<Ctx, "actor"> & { actor: A
     .limit(1);
   if (!approval) throw new AppError("approval_required", "No valid approval found for this content");
 
-  const publisher = getPublisher(item.platform);
-  if (!publisher || !(await publisher.isConnected(ctx.db, ctx.organizationId))) {
-    throw new AppError("integration_not_connected", `No connected ${item.platform} account. Connect it in Integrations first.`);
-  }
+  const { payload, version, item: fresh } = await loadContentPublishPayload(ctx.db, ctx.organizationId, id);
+  const { connection } = await precheckInstagram(ctx.db, ctx.organizationId, fresh, version, d);
 
-  const { payload, version } = await loadContentPublishPayload(ctx.db, ctx.organizationId, id);
   await consumeApproval(ctx.db, {
     organizationId: ctx.organizationId,
     approvalId: approval.id,
@@ -279,44 +301,39 @@ export async function publishContent(ctx: Ctx | (Omit<Ctx, "actor"> & { actor: A
     executor: ctx.actor,
     requestId: ctx.requestId,
   });
-
-  await ctx.db.update(contentItems).set({ status: "publishing" }).where(eq(contentItems.id, id));
-  try {
-    const result = await publisher.publish(ctx.db, ctx.organizationId, { item, version });
-    await ctx.db
-      .update(contentItems)
-      .set({ status: "published", publishedAt: new Date(), externalPostId: result.externalId, lastError: null })
-      .where(eq(contentItems.id, id));
-    await audit(ctx, { action: "content.published", targetType: "content", targetId: id, data: { externalId: result.externalId, platform: item.platform } });
-    return { status: "published" as const, externalId: result.externalId };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await ctx.db
-      .update(contentItems)
-      .set({ status: "failed", lastError: { code: "publish_failed", message } })
-      .where(eq(contentItems.id, id));
-    await audit(ctx, { action: "content.publish_failed", targetType: "content", targetId: id, data: { message } });
-    // The approval stays consumed: a new attempt needs a fresh approval.
-    throw new AppError("internal_error", `Publishing failed: ${message}`);
-  }
+  const publication = await createPublication(ctx.db, {
+    organizationId: ctx.organizationId,
+    item: fresh,
+    version,
+    approvalRequestId: approval.id,
+    connection,
+  });
+  await ctx.db.update(contentItems).set({ status: "publishing", lastError: null }).where(eq(contentItems.id, id));
+  await audit(ctx, { action: "content.publish_started", targetType: "content", targetId: id, data: { publicationId: publication.id, platform: item.platform } });
+  return { status: "publishing" as const, publicationId: publication.id };
 }
 
-/** Worker: publish scheduled items whose time has come. */
-export async function publishDueContent(db: Database) {
+/**
+ * Worker: start publishing scheduled items whose time has come. If a precondition fails
+ * (e.g. account disconnected) the item is marked failed with the reason; the approval
+ * is not used, so publishing can be retried once the problem is fixed.
+ */
+export async function publishDueContent(db: Database, d: PublishDeps = {}) {
   const due = await db
     .select()
     .from(contentItems)
     .where(and(eq(contentItems.status, "scheduled"), lte(contentItems.scheduledAt, new Date())));
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+  const actor: Actor = { type: "system", name: "scheduler" };
   for (const item of due) {
     try {
-      await publishContent({ db, organizationId: item.organizationId, actor: { type: "system", name: "scheduler" } }, item.id);
+      await publishContent({ db, organizationId: item.organizationId, actor }, item.id, d);
       results.push({ id: item.id, ok: true });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      if (e instanceof AppError && e.code === "integration_not_connected") {
-        await db.update(contentItems).set({ status: "failed", lastError: { code: e.code, message } }).where(eq(contentItems.id, item.id));
-      }
+      const code = isAppError(e) ? e.code : "internal_error";
+      await db.update(contentItems).set({ status: "failed", lastError: { code, message } }).where(eq(contentItems.id, item.id));
+      await writeAudit(db, item.organizationId, actor, { action: "content.schedule_failed", targetType: "content", targetId: item.id, data: { code, message } });
       results.push({ id: item.id, ok: false, error: message });
     }
   }

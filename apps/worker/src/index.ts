@@ -6,14 +6,17 @@
  */
 import { hostname } from "node:os";
 import { closeDb, getDb } from "@dfos/db";
-import { getAiConfigStatus, getEnv } from "@dfos/config";
+import { getAiConfigStatus, getEnv, getMetaConnectStatus } from "@dfos/config";
 import { createLogger } from "@dfos/observability";
 import {
   claimNextTask,
   executeTask,
   expireApprovals,
+  processPublications,
+  processWebhookEvents,
   publishDueContent,
   recoverStaleTasks,
+  refreshExpiringTokens,
 } from "@dfos/orchestrator";
 import { loadDotEnv } from "@dfos/db/load-env";
 
@@ -47,16 +50,34 @@ async function slot(n: number) {
 }
 
 async function maintenance() {
+  let tick = 0;
   while (!stopping) {
     try {
       const recovered = await recoverStaleTasks(db, env.WORKER_LOCK_TIMEOUT_MS);
       const expired = await expireApprovals(db);
-      const published = await publishDueContent(db);
-      if (recovered || expired || published.length) log.info("maintenance", { recovered, expired, published });
+      const scheduled = await publishDueContent(db);
+      // Token refresh is cheap to check but only needs to run occasionally.
+      const refreshed = tick % 60 === 0 && getMetaConnectStatus(env).ready ? await refreshExpiringTokens(db) : 0;
+      if (recovered || expired || scheduled.length || refreshed) log.info("maintenance", { recovered, expired, scheduled: scheduled.length, refreshed });
     } catch (err) {
       log.error("maintenance error", { err });
     }
+    tick++;
     await sleep(30_000);
+  }
+}
+
+/** Publications and webhook events move in short steps; poll them more often. */
+async function integrationsLoop() {
+  while (!stopping) {
+    try {
+      const pubs = await processPublications(db);
+      const hooks = await processWebhookEvents(db);
+      if (pubs.length || hooks.processed || hooks.failed || hooks.ignored) log.info("integrations", { publications: pubs, webhooks: hooks });
+    } catch (err) {
+      log.error("integrations loop error", { err });
+    }
+    await sleep(5_000);
   }
 }
 
@@ -78,4 +99,5 @@ log.info("worker started", {
   ai: ai.configured ? `${ai.provider}/${ai.model}` : `not configured (${ai.reason})`,
 });
 void maintenance();
+void integrationsLoop();
 await Promise.all(Array.from({ length: concurrency }, (_, i) => slot(i)));
