@@ -1,0 +1,48 @@
+{
+  "name": "dubai-fans-ai-business-os",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "dev:web": "pnpm --filter @dfos/web dev",
+    "dev:worker": "pnpm --filter @dfos/worker dev",
+    "build": "turbo run build",
+    "lint": "eslint .",
+    "typecheck": "turbo run typecheck && tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:local": "node scripts/local-postgres.mjs",
+    "db:generate": "pnpm --filter @dfos/db generate",
+    "db:migrate": "pnpm --filter @dfos/db migrate",
+    "db:seed": "tsx scripts/seed.ts"
+  },
+  "devDependencies": {
+    "@dfos/ai": "workspace:*",
+    "@dfos/auth": "workspace:*",
+    "@dfos/config": "workspace:*",
+    "@dfos/contracts": "workspace:*",
+    "@dfos/db": "workspace:*",
+    "@dfos/domain": "workspace:*",
+    "@dfos/observability": "workspace:*",
+    "@dfos/orchestrator": "workspace:*",
+    "@electric-sql/pglite": "^0.5.11",
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^24.0.0",
+    "drizzle-orm": "^0.45.4",
+    "embedded-postgres": "18.4.0-beta.17",
+    "eslint": "^10.13.0",
+    "prettier": "^3.6.0",
+    "tsx": "^4.23.15",
+    "turbo": "^2.11.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5",
+    "zod": "^4.6.7"
+  }
+}

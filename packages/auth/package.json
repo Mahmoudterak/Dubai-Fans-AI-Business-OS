@@ -1,0 +1,14 @@
+{
+  "name": "@dfos/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit -p ." },
+  "dependencies": {
+    "@dfos/config": "workspace:*",
+    "@dfos/db": "workspace:*",
+    "@dfos/domain": "workspace:*",
+    "@dfos/orchestrator": "workspace:*"
+  }
+}

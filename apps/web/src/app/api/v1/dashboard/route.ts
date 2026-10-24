@@ -1,0 +1,4 @@
+import { getDashboard } from "@dfos/orchestrator";
+import { route } from "@/server/api";
+
+export const GET = route({ permission: "org.read" }, ({ ctx }) => getDashboard(ctx));
