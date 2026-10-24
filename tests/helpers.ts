@@ -26,7 +26,7 @@ export async function setupOrg(db: Database, name = "Test Org") {
     slug: `${name.toLowerCase().replace(/\s+/g, "-")}-${counter}-${Math.random().toString(36).slice(2, 6)}`,
     ownerUserId: owner.id,
   });
-  const users: Record<Role, { id: string }> = { owner } as Record<Role, { id: string }>;
+  const users = { owner } as unknown as Record<Role, { id: string }>;
   for (const role of ["admin", "approver", "member", "viewer"] as const) {
     const u = await mk(role);
     await db.insert(organizationMembers).values({ organizationId: org.id, userId: u.id, role });

@@ -12,7 +12,7 @@
     "dev:worker": "pnpm --filter @dfos/worker dev",
     "build": "turbo run build",
     "lint": "eslint .",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc --noEmit -p .",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
@@ -20,10 +20,11 @@
     "db:local": "node scripts/local-postgres.mjs",
     "db:generate": "pnpm --filter @dfos/db generate",
     "db:migrate": "pnpm --filter @dfos/db migrate",
-    "db:seed": "pnpm --filter @dfos/db seed"
+    "db:seed": "tsx scripts/seed.ts"
   },
   "devDependencies": {
     "@dfos/ai": "workspace:*",
+    "@dfos/auth": "workspace:*",
     "@dfos/config": "workspace:*",
     "@dfos/contracts": "workspace:*",
     "@dfos/db": "workspace:*",

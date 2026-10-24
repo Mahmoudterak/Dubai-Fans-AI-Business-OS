@@ -12,7 +12,15 @@ import { getPublisher } from "./publishers";
 type VersionInput = z.infer<typeof contentVersionBody>;
 type CreateInput = z.infer<typeof createContentBody>;
 
-const normalizeTags = (tags: string[]) => tags.map((t) => (t.startsWith("#") ? t : `#${t}`));
+const PLATFORM_NAMES: Record<ContentPlatform, string> = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  tiktok: "TikTok",
+  whatsapp: "WhatsApp",
+  website: "الموقع",
+};
+
+const normalizeTags =(tags: string[]) => tags.map((t) => (t.startsWith("#") ? t : `#${t}`));
 
 export function contentHash(v: { body: string; hashtags: string[]; cta?: string | null }) {
   return sha256(canonicalJson({ body: v.body, hashtags: v.hashtags, cta: v.cta ?? null }));
@@ -201,7 +209,7 @@ export async function submitContentForApproval(ctx: Ctx, id: string) {
     const approval = await createApprovalRequest(tx, ctx.actor, {
       organizationId: ctx.organizationId,
       actionType: CONTENT_PUBLISH_ACTION,
-      title: `نشر على ${item.platform}: ${item.title}`,
+      title: `نشر على ${PLATFORM_NAMES[item.platform]}: ${item.title}`,
       summary: `الإصدار ${String(payload.versionNumber)} — ${item.format}`,
       payload,
       riskLevel: policy.riskLevel,

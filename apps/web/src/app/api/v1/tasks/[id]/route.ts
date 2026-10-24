@@ -1,0 +1,4 @@
+import { getTask } from "@dfos/orchestrator";
+import { parseId, route } from "@/server/api";
+
+export const GET = route<undefined, undefined, { id: string }>({ permission: "tasks.read" }, ({ ctx, params }) => getTask(ctx, parseId(params.id)));

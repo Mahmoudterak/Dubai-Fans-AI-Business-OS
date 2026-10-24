@@ -5,5 +5,10 @@
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit -p ." },
-  "dependencies": { "@dfos/config": "workspace:*", "@dfos/db": "workspace:*", "@dfos/domain": "workspace:*", "drizzle-orm": "^0.45.4" }
+  "dependencies": {
+    "@dfos/config": "workspace:*",
+    "@dfos/db": "workspace:*",
+    "@dfos/domain": "workspace:*",
+    "@dfos/orchestrator": "workspace:*"
+  }
 }

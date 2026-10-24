@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: dfos
+          POSTGRES_PASSWORD: dfos_ci_only
+          POSTGRES_DB: dfos
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dfos" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://dfos:dfos_ci_only@localhost:5432/dfos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit, integration and security tests (in-memory PostgreSQL)
+        run: pnpm test
+      - name: Migrations against real PostgreSQL (twice, must be idempotent)
+        run: pnpm db:migrate && pnpm db:migrate
+      - name: Seed (twice, must be idempotent)
+        env: { NODE_ENV: development }
+        run: pnpm db:seed && pnpm db:seed
+      - name: Build
+        env: { NODE_ENV: production, APP_BASE_URL: http://localhost:3000, AUTH_SECRET: ci-build-only-not-a-real-secret-0000000000 }
+        run: pnpm build

@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink-950: #070d1a;
+  --color-ink-900: #0b1426;
+  --color-ink-850: #0f1a30;
+  --color-ink-800: #13213b;
+  --color-ink-700: #1c2d4d;
+  --color-ink-600: #2a3f66;
+  --color-ink-400: #7d8fb3;
+  --color-ink-300: #a9b6d1;
+  --color-ink-100: #e6ebf5;
+  --color-accent-500: #3b82f6;
+  --color-accent-400: #60a5fa;
+  --color-gold-500: #d4a72c;
+  --color-gold-400: #e5c25a;
+  --font-sans: "Segoe UI", "Noto Sans Arabic", "Geeza Pro", Tahoma, ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers, ids and code read left-to-right even inside RTL text. */
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent-400);
+  outline-offset: 2px;
+}
