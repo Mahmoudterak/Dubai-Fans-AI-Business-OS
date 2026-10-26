@@ -46,6 +46,16 @@ export default async function SettingsPage() {
                 </ActionButton>
               </div>
               <BudgetForm current={org.aiMonthlyBudgetUsd} />
+              <div>
+                <p className="mb-2 text-sm font-semibold">قاعدة «أربع أعين»</p>
+                <p className="mb-3 text-xs text-ink-400">
+                  عند التفعيل لا يستطيع أحد اعتماد طلب أرسله بنفسه أو محتوى كتبه أو عدّله. الرفض وطلب التعديلات مسموحان دائمًا. الحالة الحالية:{" "}
+                  {org.requireDistinctApprover ? "مفعّلة" : "غير مفعّلة (يمكن للمستخدم المخوّل اعتماد عمله)"}.
+                </p>
+                <ActionButton path="/settings" method="PATCH" body={{ requireDistinctApprover: !org.requireDistinctApprover }} variant="ghost">
+                  {org.requireDistinctApprover ? "إلغاء قاعدة أربع أعين" : "تفعيل قاعدة أربع أعين"}
+                </ActionButton>
+              </div>
             </div>
           )}
         </Card>
@@ -72,7 +82,7 @@ export default async function SettingsPage() {
       <Card className="mt-4">
         <CardTitle>السياسات</CardTitle>
         <Notice tone="blue">
-          السياسة الافتراضية الأكثر أمانًا مفعّلة: النشر، الرسائل الخارجية، تعديل ميزانيات الإعلانات، وإنشاء مهام فرعية من خطة المدير التنفيذي كلها تتطلب موافقة بشرية. لا يمكن لأي وكيل اعتماد طلب.
+          السياسة الافتراضية الأكثر أمانًا مفعّلة: النشر، الرسائل الخارجية، تعديل ميزانيات الإعلانات، وإنشاء مهام فرعية من خطة المدير التنفيذي كلها تتطلب موافقة بشرية. لا يمكن لأي وكيل اعتماد طلب. قاعدة «أربع أعين»: {org.requireDistinctApprover ? "مفعّلة" : "غير مفعّلة"}.
         </Notice>
       </Card>
 

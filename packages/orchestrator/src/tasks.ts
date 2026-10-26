@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { agentRuns, agents, contentItems, taskDependencies, taskEvents, tasks, type Database } from "@dfos/db";
 import {
   agentForTaskType,
@@ -270,7 +270,8 @@ export async function recoverStaleTasks(db: Database, lockTimeoutMs: number) {
   const stale = await db
     .select()
     .from(tasks)
-    .where(and(eq(tasks.status, "running"), sql`${tasks.lockedAt} < ${cutoff}`));
+    // Typed comparison: postgres-js cannot serialise a Date placed inside a raw sql`` fragment.
+    .where(and(eq(tasks.status, "running"), lt(tasks.lockedAt, cutoff)));
   const actor: Actor = { type: "system", name: "recovery" };
   for (const task of stale) {
     try {

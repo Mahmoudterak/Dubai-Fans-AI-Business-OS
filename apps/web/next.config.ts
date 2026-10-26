@@ -33,7 +33,7 @@ const securityHeaders = [
       "font-src 'self' data:",
       "style-src 'self' 'unsafe-inline'",
       `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} https://*.clerk.accounts.dev https://*.clerk.com`,
-      "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com",
+      "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com",
       "frame-src https://*.clerk.accounts.dev https://*.clerk.com",
       "worker-src 'self' blob:",
     ].join("; "),
@@ -51,10 +51,11 @@ const config: NextConfig = {
     "@dfos/contracts",
     "@dfos/db",
     "@dfos/domain",
+    "@dfos/integrations",
     "@dfos/observability",
     "@dfos/orchestrator",
   ],
-  serverExternalPackages: ["postgres"],
+  serverExternalPackages: ["postgres", "@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -13,6 +13,7 @@
     "@dfos/db": "workspace:*",
     "@dfos/observability": "workspace:*",
     "@dfos/orchestrator": "workspace:*",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "@dfos/integrations": "workspace:*"
   }
 }

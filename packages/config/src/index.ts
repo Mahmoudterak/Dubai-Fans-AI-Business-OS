@@ -33,11 +33,36 @@ const envSchema = z.object({
   AI_REQUEST_TIMEOUT_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(60000)),
   AI_MAX_OUTPUT_TOKENS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(2048)),
 
-  // Meta / Instagram (phase 6)
+  // Meta / Instagram — "Instagram API with Instagram Login". App ID and secret are the
+  // *Instagram* app ID/secret shown under Instagram > API setup with Instagram login.
   META_APP_ID: optionalString,
   META_APP_SECRET: optionalString,
   META_REDIRECT_URI: optionalString,
   META_WEBHOOK_VERIFY_TOKEN: optionalString,
+  META_GRAPH_API_VERSION: z.preprocess(emptyToUndefined, z.string().regex(/^v\d+\.\d+$/).default("v26.0")),
+  /** Webhook fields to subscribe each connected account to, e.g. "comments,messages". Empty = none. */
+  META_WEBHOOK_FIELDS: optionalString,
+  META_INSTAGRAM_SCOPES: z.preprocess(
+    emptyToUndefined,
+    z.string().default("instagram_business_basic,instagram_business_content_publish"),
+  ),
+
+  // Secrets at rest: base64 of 32 random bytes. Keep it in the host's secret manager, never in the DB.
+  SECRETS_ENCRYPTION_KEY: optionalString,
+  SECRETS_KEY_VERSION: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(1)),
+  /** Previous keys for rotation, "version:base64key" comma-separated. */
+  SECRETS_PREVIOUS_KEYS: optionalString,
+
+  // Object storage (S3-compatible: AWS S3, Cloudflare R2, Backblaze B2, MinIO...)
+  OBJECT_STORAGE_ENDPOINT: optionalString,
+  OBJECT_STORAGE_REGION: z.preprocess(emptyToUndefined, z.string().default("auto")),
+  OBJECT_STORAGE_BUCKET: optionalString,
+  OBJECT_STORAGE_ACCESS_KEY_ID: optionalString,
+  OBJECT_STORAGE_SECRET_ACCESS_KEY: optionalString,
+  OBJECT_STORAGE_FORCE_PATH_STYLE: z.preprocess(emptyToUndefined, z.enum(["true", "false"]).default("true")),
+  /** Lifetime of signed GET links handed to Meta. Must cover container processing (minutes). */
+  OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS: z.preprocess(emptyToUndefined, z.coerce.number().int().min(300).max(604800).default(3600)),
+  MEDIA_MAX_UPLOAD_BYTES: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(8 * 1024 * 1024)),
 
   // Worker
   WORKER_POLL_INTERVAL_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(2000)),
@@ -95,4 +120,34 @@ export function getAiConfigStatus(env = getEnv()): AiConfigStatus {
 
 export function isMetaConfigured(env = getEnv()) {
   return Boolean(env.META_APP_ID && env.META_APP_SECRET && env.META_REDIRECT_URI);
+}
+
+export type FeatureStatus = { ready: true } | { ready: false; missing: string[] };
+
+/** Everything needed to connect an Instagram account. */
+export function getMetaConnectStatus(env = getEnv()): FeatureStatus {
+  const missing: string[] = [];
+  if (!env.META_APP_ID) missing.push("META_APP_ID");
+  if (!env.META_APP_SECRET) missing.push("META_APP_SECRET");
+  if (!env.META_REDIRECT_URI) missing.push("META_REDIRECT_URI");
+  if (!isSecretsKeyValid(env)) missing.push("SECRETS_ENCRYPTION_KEY");
+  return missing.length ? { ready: false, missing } : { ready: true };
+}
+
+export function isSecretsKeyValid(env = getEnv()) {
+  if (!env.SECRETS_ENCRYPTION_KEY) return false;
+  try {
+    return Buffer.from(env.SECRETS_ENCRYPTION_KEY, "base64").length === 32;
+  } catch {
+    return false;
+  }
+}
+
+export function getStorageStatus(env = getEnv()): FeatureStatus {
+  const missing: string[] = [];
+  if (!env.OBJECT_STORAGE_ENDPOINT) missing.push("OBJECT_STORAGE_ENDPOINT");
+  if (!env.OBJECT_STORAGE_BUCKET) missing.push("OBJECT_STORAGE_BUCKET");
+  if (!env.OBJECT_STORAGE_ACCESS_KEY_ID) missing.push("OBJECT_STORAGE_ACCESS_KEY_ID");
+  if (!env.OBJECT_STORAGE_SECRET_ACCESS_KEY) missing.push("OBJECT_STORAGE_SECRET_ACCESS_KEY");
+  return missing.length ? { ready: false, missing } : { ready: true };
 }

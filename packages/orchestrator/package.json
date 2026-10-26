@@ -3,7 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit -p ." },
-  "dependencies": { "zod": "^4.6.7", "drizzle-orm": "^0.45.4", "@dfos/db": "workspace:*", "@dfos/domain": "workspace:*", "@dfos/ai": "workspace:*", "@dfos/contracts": "workspace:*", "@dfos/config": "workspace:*", "@dfos/observability": "workspace:*" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "zod": "^4.6.7",
+    "drizzle-orm": "^0.45.4",
+    "@dfos/db": "workspace:*",
+    "@dfos/domain": "workspace:*",
+    "@dfos/ai": "workspace:*",
+    "@dfos/contracts": "workspace:*",
+    "@dfos/config": "workspace:*",
+    "@dfos/observability": "workspace:*",
+    "@dfos/integrations": "workspace:*"
+  }
 }

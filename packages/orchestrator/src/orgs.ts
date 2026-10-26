@@ -128,11 +128,12 @@ export async function listMembers(ctx: Ctx) {
 
 export async function updateOrgSettings(
   ctx: Ctx,
-  patch: { agentsPaused?: boolean; aiMonthlyBudgetUsd?: number | null; timezone?: string },
+  patch: { agentsPaused?: boolean; requireDistinctApprover?: boolean; aiMonthlyBudgetUsd?: number | null; timezone?: string },
 ) {
   requirePermission(ctx, "org.manage");
   const set: Partial<typeof organizations.$inferInsert> = {};
   if (patch.agentsPaused !== undefined) set.agentsPaused = patch.agentsPaused;
+  if (patch.requireDistinctApprover !== undefined) set.requireDistinctApprover = patch.requireDistinctApprover;
   if (patch.aiMonthlyBudgetUsd !== undefined)
     set.aiMonthlyBudgetUsd = patch.aiMonthlyBudgetUsd === null ? null : String(patch.aiMonthlyBudgetUsd);
   if (patch.timezone !== undefined) {

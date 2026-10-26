@@ -9,7 +9,14 @@ const SECRET_KEY_PATTERN =
   /(pass(word)?|secret|token|api[-_]?key|authorization|cookie|access[-_]?key|refresh|private[-_]?key|signature)/i;
 
 // Bearer tokens, sk-... style keys, and long opaque strings that look like credentials.
-const SECRET_VALUE_PATTERNS = [/Bearer\s+[A-Za-z0-9._~+/=-]+/g, /\b(sk|pk|rk)[-_][A-Za-z0-9_-]{16,}\b/g];
+const SECRET_VALUE_PATTERNS = [
+  /Bearer\s+[A-Za-z0-9._~+/=-]+/g,
+  /\b(sk|pk|rk)[-_][A-Za-z0-9_-]{16,}\b/g,
+  // Instagram / Facebook user tokens
+  /\b(IG[A-Za-z]{2}|EAA)[A-Za-z0-9_-]{16,}/g,
+  // access_token=... inside URLs or messages
+  /(access_token|client_secret|code)=[^&\s"]+/gi,
+];
 
 export function redact(value: unknown, depth = 0): unknown {
   if (depth > 8) return "[depth-limit]";
@@ -20,7 +27,13 @@ export function redact(value: unknown, depth = 0): unknown {
   }
   if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
   if (value instanceof Error) {
-    return { name: value.name, message: redact(value.message, depth + 1), stack: value.stack };
+    return {
+      name: value.name,
+      message: redact(value.message, depth + 1),
+      stack: redact(value.stack, depth + 1),
+      // e.g. the driver error behind a DrizzleQueryError ("connection refused", "database is starting up")
+      ...(value.cause !== undefined ? { cause: redact(value.cause, depth + 1) } : {}),
+    };
   }
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};

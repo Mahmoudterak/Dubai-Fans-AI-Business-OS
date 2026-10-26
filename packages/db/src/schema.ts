@@ -93,6 +93,8 @@ export const organizations = pgTable("organizations", {
   aiMonthlyBudgetUsd: numeric("ai_monthly_budget_usd", { precision: 12, scale: 4 }),
   /** Org-wide kill switch: when true no agent runs. */
   agentsPaused: boolean("agents_paused").notNull().default(false),
+  /** Four-eyes rule: the approver must differ from the requester and the content author. Off by default. */
+  requireDistinctApprover: boolean("require_distinct_approver").notNull().default(false),
   ...timestamps,
 });
 
@@ -400,9 +402,183 @@ export const contentVersions = pgTable(
       onDelete: "set null",
     }),
     contentHash: text("content_hash").notNull(),
+    /** Image attached to this version. Part of the approved fingerprint. */
+    mediaAssetId: uuid("media_asset_id").references((): AnyPgColumn => mediaAssets.id, { onDelete: "restrict" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("content_versions_item_number_uq").on(t.contentItemId, t.versionNumber)],
+);
+
+/** Files in object storage. A row exists only after the storage provider confirmed the upload. */
+export const mediaAssets = pgTable(
+  "media_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: orgId(),
+    storageProvider: text("storage_provider").notNull(),
+    storageKey: text("storage_key").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    originalName: text("original_name"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("media_assets_storage_key_uq").on(t.storageProvider, t.storageKey),
+    index("media_assets_org_idx").on(t.organizationId, t.createdAt),
+  ],
+);
+
+// ───────────────────────── Integrations ─────────────────────────
+
+export const connectionStatusEnum = pgEnum("connection_status", [
+  "active",
+  "expired",
+  "revoked",
+  "error",
+  "disconnected",
+]);
+export const webhookStatusEnum = pgEnum("webhook_status", ["received", "processing", "processed", "ignored", "failed"]);
+export const publicationStatusEnum = pgEnum("publication_status", [
+  "queued",
+  "container_processing",
+  "ready_to_publish",
+  "publish_requested",
+  "published",
+  "failed",
+  "needs_review",
+]);
+
+export const integrationConnections = pgTable(
+  "integration_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: orgId(),
+    provider: text("provider").notNull(), // "instagram"
+    externalAccountId: text("external_account_id").notNull(),
+    username: text("username"),
+    accountType: text("account_type"),
+    status: connectionStatusEnum("status").notNull().default("active"),
+    /** Kill switch for this connection: when false nothing is published or synced. */
+    enabled: boolean("enabled").notNull().default(true),
+    grantedScopes: jsonb("granted_scopes").$type<string[]>().notNull().default([]),
+    /** Opaque reference into integration_secrets. Null once disconnected. Never the token itself. */
+    secretRef: text("secret_ref"),
+    tokenObtainedAt: timestamp("token_obtained_at", { withTimezone: true }),
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    lastError: jsonb("last_error").$type<{ code: string; message: string; at: string }>(),
+    connectedByUserId: uuid("connected_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("integration_connections_org_idx").on(t.organizationId, t.provider),
+    // One live connection per external account across all orgs: webhooks are routed by account id.
+    uniqueIndex("integration_connections_live_account_uq")
+      .on(t.provider, t.externalAccountId)
+      .where(sql`${t.status} in ('active', 'expired', 'error')`),
+  ],
+);
+
+/**
+ * Encrypted secrets (AES-256-GCM). The key lives outside the database (env / secret manager),
+ * so a database dump alone does not reveal tokens.
+ */
+export const integrationSecrets = pgTable("integration_secrets", {
+  ref: text("ref").primaryKey(),
+  organizationId: orgId(),
+  keyVersion: integer("key_version").notNull(),
+  iv: text("iv").notNull(),
+  authTag: text("auth_tag").notNull(),
+  ciphertext: text("ciphertext").notNull(),
+  ...timestamps,
+});
+
+/** One row per OAuth attempt. Only a hash of the state is stored; single use; short expiry. */
+export const oauthStates = pgTable(
+  "oauth_states",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: orgId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    purpose: text("purpose").notNull(),
+    stateHash: text("state_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("oauth_states_hash_uq").on(t.stateHash)],
+);
+
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    /** Derived from trusted fields of the event; see docs/operations/meta-setup.md. */
+    dedupeKey: text("dedupe_key").notNull(),
+    organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").references(() => integrationConnections.id, { onDelete: "set null" }),
+    externalAccountId: text("external_account_id"),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    status: webhookStatusEnum("status").notNull().default("received"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lastError: text("last_error"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("webhook_events_dedupe_uq").on(t.provider, t.dedupeKey),
+    index("webhook_events_pending_idx").on(t.status, t.nextAttemptAt),
+    index("webhook_events_org_idx").on(t.organizationId, t.receivedAt),
+  ],
+);
+
+/** One publication per approval: the unique approval id is what stops double posting. */
+export const contentPublications = pgTable(
+  "content_publications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: orgId(),
+    contentItemId: uuid("content_item_id")
+      .notNull()
+      .references(() => contentItems.id, { onDelete: "cascade" }),
+    versionId: uuid("version_id")
+      .notNull()
+      .references(() => contentVersions.id, { onDelete: "restrict" }),
+    approvalRequestId: uuid("approval_request_id")
+      .notNull()
+      .references(() => approvalRequests.id, { onDelete: "restrict" }),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: "restrict" }),
+    platform: contentPlatformEnum("platform").notNull(),
+    status: publicationStatusEnum("status").notNull().default("queued"),
+    containerId: text("container_id"),
+    externalMediaId: text("external_media_id"),
+    permalink: text("permalink"),
+    containerAttempts: integer("container_attempts").notNull().default(0),
+    statusChecks: integer("status_checks").notNull().default(0),
+    publishAttempts: integer("publish_attempts").notNull().default(0),
+    nextCheckAt: timestamp("next_check_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    lastError: jsonb("last_error").$type<{ code: string; message: string }>(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("content_publications_approval_uq").on(t.approvalRequestId),
+    index("content_publications_due_idx").on(t.status, t.nextCheckAt),
+    index("content_publications_content_idx").on(t.contentItemId),
+  ],
 );
 
 // ───────────────────────── Usage & idempotency ─────────────────────────

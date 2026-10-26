@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
-import { aiModelUsage, approvalRequests, auditLogs, contentItems, organizations, tasks } from "@dfos/db";
+import { aiModelUsage, approvalRequests, auditLogs, contentItems, integrationConnections, organizations, tasks } from "@dfos/db";
 import { getAiConfigStatus, isMetaConfigured } from "@dfos/config";
 import { can } from "@dfos/domain";
 import { requirePermission, type Ctx } from "./context";
@@ -41,6 +41,11 @@ export async function getDashboard(ctx: Ctx) {
       ? await ctx.db.select().from(auditLogs).where(eq(auditLogs.organizationId, org)).orderBy(desc(auditLogs.createdAt)).limit(10)
       : [];
 
+  const instagram = await ctx.db
+    .select({ status: integrationConnections.status, enabled: integrationConnections.enabled })
+    .from(integrationConnections)
+    .where(and(eq(integrationConnections.organizationId, org), eq(integrationConnections.provider, "instagram")));
+
   const ai = getAiConfigStatus();
   return {
     organization: orgRow[0] ? { name: orgRow[0].name, agentsPaused: orgRow[0].agentsPaused, timezone: orgRow[0].timezone } : null,
@@ -59,7 +64,13 @@ export async function getDashboard(ctx: Ctx) {
     // Worker liveness is inferred from the last task it claimed (any org). Null = never ran.
     worker: { lastClaimAt: lastClaim[0]?.at ?? null },
     integrations: [
-      { provider: "meta", name: "Meta / Instagram", appConfigured: isMetaConfigured(), connected: false, phase: 6 },
+      {
+        provider: "meta",
+        name: "Meta / Instagram",
+        appConfigured: isMetaConfigured(),
+        connected: instagram.some((c) => c.status === "active" && c.enabled),
+        phase: 6,
+      },
       { provider: "tiktok", name: "TikTok", appConfigured: false, connected: false, phase: null },
       { provider: "whatsapp", name: "WhatsApp Business", appConfigured: false, connected: false, phase: null },
       { provider: "google_ads", name: "Google Ads", appConfigured: false, connected: false, phase: null },

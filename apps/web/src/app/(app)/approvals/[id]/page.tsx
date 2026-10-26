@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { can, isAppError } from "@dfos/domain";
-import { CONTENT_PUBLISH_ACTION, getApproval } from "@dfos/orchestrator";
+import { isStorageAvailable } from "@dfos/integrations";
+import { CONTENT_PUBLISH_ACTION, getApproval, getMediaPreviewUrl } from "@dfos/orchestrator";
 import { DecisionForm } from "@/components/decision-form";
 import { Badge, Card, CardTitle, KeyValue, Notice, PageHeader, Pre } from "@/components/ui";
 import { ApprovalStatus, formatDate, RiskBadge } from "@/components/status";
@@ -15,11 +16,18 @@ interface PlanPayload {
   subtasks: Array<{ title: string; type: string; agent: string; rationale: string; input: Record<string, unknown>; dependsOnIndex: number[] }>;
 }
 
-function Preview({ actionType, payload }: { actionType: string; payload: Record<string, unknown> }) {
+function Preview({ actionType, payload, imageUrl }: { actionType: string; payload: Record<string, unknown>; imageUrl: string | null }) {
   if (actionType === CONTENT_PUBLISH_ACTION) {
-    const p = payload as { body: string; hashtags: string[]; cta: string | null; platform: string; format: string; audience: string | null; scheduledAt: string | null; versionNumber: number };
+    const p = payload as { body: string; hashtags: string[]; cta: string | null; platform: string; format: string; audience: string | null; scheduledAt: string | null; versionNumber: number; media?: { id: string } | null };
     return (
       <div className="flex flex-col gap-4">
+        {imageUrl ? (
+          <img src={imageUrl} alt="" className="max-h-80 w-full rounded-xl object-contain" />
+        ) : p.media ? (
+          <p className="text-sm text-ink-400">صورة مرفقة (المعاينة غير متاحة)</p>
+        ) : (
+          <p className="text-sm text-amber-300">بلا صورة: النشر على Instagram سيرفض حتى تُرفق صورة.</p>
+        )}
         <KeyValue
           items={[
             ["المنصة", t.platform[p.platform as keyof typeof t.platform] ?? p.platform],
@@ -72,6 +80,15 @@ export default async function ApprovalDetailPage({ params }: { params: Promise<{
     throw e;
   }
   const { approval, events, decidedBy, stale } = data;
+  const mediaId = (approval.payload as { media?: { id?: string } | null }).media?.id;
+  let imageUrl: string | null = null;
+  if (mediaId && isStorageAvailable()) {
+    try {
+      imageUrl = (await getMediaPreviewUrl(ctx, mediaId)).url;
+    } catch {
+      imageUrl = null;
+    }
+  }
   const role = ctx.actor.type === "user" ? ctx.actor.role : "viewer";
   const canDecide = can(role, "approvals.decide") && approval.status === "pending";
 
@@ -84,7 +101,7 @@ export default async function ApprovalDetailPage({ params }: { params: Promise<{
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardTitle>ما الذي سيُنفَّذ بالضبط</CardTitle>
-          <Preview actionType={approval.actionType} payload={approval.payload} />
+          <Preview actionType={approval.actionType} payload={approval.payload} imageUrl={imageUrl} />
         </Card>
         <div className="flex flex-col gap-4">
           <Card>
