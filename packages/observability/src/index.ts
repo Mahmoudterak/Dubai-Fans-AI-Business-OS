@@ -27,7 +27,13 @@ export function redact(value: unknown, depth = 0): unknown {
   }
   if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
   if (value instanceof Error) {
-    return { name: value.name, message: redact(value.message, depth + 1), stack: value.stack };
+    return {
+      name: value.name,
+      message: redact(value.message, depth + 1),
+      stack: redact(value.stack, depth + 1),
+      // e.g. the driver error behind a DrizzleQueryError ("connection refused", "database is starting up")
+      ...(value.cause !== undefined ? { cause: redact(value.cause, depth + 1) } : {}),
+    };
   }
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};

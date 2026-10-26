@@ -41,13 +41,16 @@ jobs:
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
-      - name: Unit, integration and security tests (in-memory PostgreSQL)
-        run: pnpm test
       - name: Migrations against real PostgreSQL (twice, must be idempotent)
         run: pnpm db:migrate && pnpm db:migrate
       - name: Seed (twice, must be idempotent)
         env: { NODE_ENV: development }
         run: pnpm db:seed && pnpm db:seed
+      - name: Tests (in-memory PostgreSQL + worker queries on the real PostgreSQL service)
+        env:
+          # Enables tests/postgres: same driver as production (postgres-js).
+          TEST_DATABASE_URL: postgres://dfos:dfos_ci_only@localhost:5432/dfos
+        run: pnpm test
       - name: Build
         env: { NODE_ENV: production, APP_BASE_URL: http://localhost:3000, AUTH_SECRET: ci-build-only-not-a-real-secret-0000000000 }
         run: pnpm build

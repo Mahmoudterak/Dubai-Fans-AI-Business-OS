@@ -313,7 +313,6 @@ export async function syncConnection(ctx: Ctx, id: string, d: MetaDeps = {}) {
 
 /** Worker: refresh long-lived tokens that expire within 7 days (Meta requires them to be ≥24h old). */
 export async function refreshExpiringTokens(db: Database, d: MetaDeps = {}) {
-  const { client, secrets } = resolve(db, d);
   const soon = new Date(Date.now() + 7 * 86400_000);
   const dayAgo = new Date(Date.now() - 86400_000);
   const due = await db
@@ -328,6 +327,9 @@ export async function refreshExpiringTokens(db: Database, d: MetaDeps = {}) {
       ),
     );
   let refreshed = 0;
+  if (!due.length) return refreshed;
+  // Only needs the client and the encryption key when there is something to refresh.
+  const { client, secrets } = resolve(db, d);
   for (const c of due) {
     try {
       const token = await getAccessToken(db, c, secrets);
