@@ -52,7 +52,7 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-dvh flex-col lg:flex-row">
-      <aside className="border-b border-ink-700/70 bg-ink-900 lg:sticky lg:top-0 lg:h-dvh lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-e">
+      <aside className="border-b border-ink-700/70 bg-ink-900 lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-64 lg:shrink-0 lg:flex-col lg:border-b-0 lg:border-e">
         <div className="flex items-center justify-between gap-3 px-4 py-4 lg:flex-col lg:items-stretch">
           <Link href="/" className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-xl bg-gold-500 text-ink-950">
@@ -65,7 +65,8 @@ export function AppShell({
           </Link>
           {devMode && <span className="rounded-md bg-amber-500/15 px-2 py-1 text-center text-[11px] text-amber-300">وضع التطوير — تسجيل دخول تجريبي</span>}
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:overflow-visible">
+        {/* On desktop the menu takes the remaining height and scrolls, so the user box below never covers it. */}
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto">
           {NAV.map((n) => (
             <NavLink key={n.href} href={n.href}>
               <n.icon className="size-4 shrink-0" />
@@ -83,7 +84,7 @@ export function AppShell({
             </span>
           ))}
         </nav>
-        <div className="hidden border-t border-ink-700/70 px-4 py-4 text-sm lg:absolute lg:inset-x-0 lg:bottom-0 lg:block">
+        <div className="hidden shrink-0 border-t border-ink-700/70 px-4 py-4 text-sm lg:block">
           <p className="truncate font-medium text-ink-100">{userName}</p>
           <p className="truncate text-xs text-ink-400">
             {orgName} · {role}
