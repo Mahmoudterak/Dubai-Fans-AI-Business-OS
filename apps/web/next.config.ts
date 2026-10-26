@@ -33,7 +33,7 @@ const securityHeaders = [
       "font-src 'self' data:",
       "style-src 'self' 'unsafe-inline'",
       `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} https://*.clerk.accounts.dev https://*.clerk.com`,
-      "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com",
+      "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com",
       "frame-src https://*.clerk.accounts.dev https://*.clerk.com",
       "worker-src 'self' blob:",
     ].join("; "),
