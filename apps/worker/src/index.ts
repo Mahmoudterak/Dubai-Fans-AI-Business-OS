@@ -19,6 +19,7 @@ import {
   refreshExpiringTokens,
 } from "@dfos/orchestrator";
 import { loadDotEnv } from "@dfos/db/load-env";
+import { WorkerHealth } from "./health";
 
 loadDotEnv();
 const env = getEnv();
@@ -30,11 +31,13 @@ const db = getDb();
 let stopping = false;
 const inFlight = new Set<Promise<unknown>>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const health = new WorkerHealth(["queue", "maintenance", "integrations"]);
 
 async function slot(n: number) {
   while (!stopping) {
     try {
       const task = await claimNextTask(db, `${workerId}#${n}`);
+      health.ok("queue");
       if (!task) {
         await sleep(env.WORKER_POLL_INTERVAL_MS);
         continue;
@@ -59,6 +62,7 @@ async function maintenance() {
       // Token refresh is cheap to check but only needs to run occasionally.
       const refreshed = tick % 60 === 0 && getMetaConnectStatus(env).ready ? await refreshExpiringTokens(db) : 0;
       if (recovered || expired || scheduled.length || refreshed) log.info("maintenance", { recovered, expired, scheduled: scheduled.length, refreshed });
+      health.ok("maintenance");
     } catch (err) {
       log.error("maintenance error", { err });
     }
@@ -74,6 +78,7 @@ async function integrationsLoop() {
       const pubs = await processPublications(db);
       const hooks = await processWebhookEvents(db);
       if (pubs.length || hooks.processed || hooks.failed || hooks.ignored) log.info("integrations", { publications: pubs, webhooks: hooks });
+      health.ok("integrations");
     } catch (err) {
       log.error("integrations loop error", { err });
     }
@@ -98,6 +103,12 @@ log.info("worker started", {
   concurrency,
   ai: ai.configured ? `${ai.provider}/${ai.model}` : `not configured (${ai.reason})`,
 });
+// Hosts that require an HTTP port (Render Web Service) set PORT; then /healthz reports liveness.
+const port = Number(process.env.PORT ?? 0);
+if (port > 0) {
+  health.listen(port, () => ({ workerId, concurrency, inFlight: inFlight.size, ai: ai.configured }));
+  log.info("health endpoint listening", { port, path: "/healthz" });
+}
 void maintenance();
 void integrationsLoop();
 await Promise.all(Array.from({ length: concurrency }, (_, i) => slot(i)));

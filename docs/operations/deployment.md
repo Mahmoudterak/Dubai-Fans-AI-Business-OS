@@ -31,6 +31,23 @@ Set them in Vercel (Production and Preview separately) and in the worker host. N
 - Clerk: add the production domain; sign-in path `/sign-in`.
 - The CSP in `next.config.ts` allows `*.clerk.accounts.dev` and `*.clerk.com`. If you use a Clerk custom domain, add it to `script-src`, `connect-src` and `frame-src`.
 
+## Worker on Render
+
+Render's Background Worker type works too; the steps below use a **Web Service** (Starter plan, always on), because the worker exposes `/healthz` when `PORT` is set.
+
+| Setting | Value |
+|---|---|
+| Repo / branch | this repo / `main` |
+| Runtime | Node |
+| Build command | `corepack enable && pnpm install --frozen-lockfile` |
+| Start command | `pnpm --filter @dfos/worker start` |
+| Health check path | `/healthz` (200 = every loop reported in the last 3 minutes, 503 otherwise) |
+| Plan | Starter (the free plan sleeps after 15 min without HTTP traffic, which would stop the worker) |
+
+Environment: `NODE_ENV=production`, `NODE_VERSION=24`, `WORKER_CONCURRENCY=2`, plus the same values the web app uses for
+`DATABASE_URL` (Neon pooled), `AI_PROVIDER`, `AI_DEFAULT_MODEL`, `AI_GATEWAY_API_KEY`, `SECRETS_ENCRYPTION_KEY`,
+`APP_BASE_URL`, and the `META_*` / `OBJECT_STORAGE_*` variables once used. Secrets go in the Render dashboard, not in git.
+
 ## Release order
 
 1. `pnpm db:migrate` against the target database (migrations are additive; never drop columns in the same release that stops using them).
